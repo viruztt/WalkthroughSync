@@ -1,0 +1,8 @@
+PySide6>=6.6
+numpy
+pillow
+mss
+imageio-ffmpeg
+yt-dlp[default]
+open_clip_torch
+# torch + torchvision are installed by run.bat from the PyTorch CUDA index
