@@ -179,7 +179,7 @@ class SyncWindow(QWidget):
             return
         self.live = d
         pos = d.get("position")
-        if pos is not None and d.get("status") in ("tracking", "updated"):
+        if pos is not None and d.get("status") in ("tracking", "updated", "paused"):
             self.game.set_position(pos)
             self._save_position()
         self._update_thumb()
@@ -255,8 +255,8 @@ class SyncWindow(QWidget):
             exe = g.meta.get("exe", "")
             s = f"Waiting for {exe}" if exe else "Waiting for a fullscreen game"
             col = GREY
-        elif st == "still":
-            s, col = "Paused (screen isn't changing)", GREY
+        elif st in ("still", "paused"):
+            s, col = "Paused (menu or pause screen)", GREY
         elif st in ("tracking", "updated"):
             if conf >= 0.5:
                 s, col = "Tracking · confident", GREEN
@@ -321,7 +321,10 @@ class SyncWindow(QWidget):
             return f"{self.index_info[1] * 100:.0f}%", AMBER, dot
         if not g.ready:
             return "!", RED, dot
-        return f"{frac * 100:.2f}%", TEXT, dot
+        if self.cfg.get("minimal_decimals", True):
+            return f"{frac * 100:.2f}%", TEXT, dot
+        # whole numbers: floor, so it only reads 100% at the very end
+        return f"{min(100, int(frac * 100 + 1e-9))}%", TEXT, dot
 
     def _minimal_dot(self, fm: QFontMetrics) -> int:
         return max(7, round(fm.height() * 0.38))
@@ -330,7 +333,8 @@ class SyncWindow(QWidget):
         if self._minimal():
             fm = QFontMetrics(self._minimal_font())
             # sized for the widest value so the pill doesn't twitch as it counts
-            w = 9 + self._minimal_dot(fm) + 7 + fm.horizontalAdvance("100.00%") + 9
+            widest = "100.00%" if self.cfg.get("minimal_decimals", True) else "100%"
+            w = 9 + self._minimal_dot(fm) + 7 + fm.horizontalAdvance(widest) + 9
             h = fm.height() + 2 * 4
             if self.size().width() != w or self.size().height() != h:
                 self.setFixedSize(w, h)
@@ -700,6 +704,11 @@ class SyncWindow(QWidget):
         a.setCheckable(True)
         a.setChecked(self._minimal())
         a.toggled.connect(lambda on: self._set_key("layout", "minimal" if on else "full"))
+        a = m.addAction("    Decimals  (12.34% instead of 12%)")
+        a.setCheckable(True)
+        a.setChecked(bool(self.cfg.get("minimal_decimals", True)))
+        a.setEnabled(self._minimal())
+        a.toggled.connect(lambda on: self._set_key("minimal_decimals", bool(on)))
 
         pm = m.addMenu("Progress text")
         pm.setEnabled(not self._minimal())

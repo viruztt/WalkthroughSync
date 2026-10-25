@@ -15,7 +15,7 @@ from . import embedder as E
 from . import games as G
 from . import indexer
 from . import sessions as S
-from .tracker import Tracker, prepare
+from .tracker import PauseDetector, Tracker, prepare
 
 STATIC_DIFF = 1.2      # mean abs change (0-255) of the tiny frame below which it's "still"
 STATIC_TICKS = 3       # this many still screenshots in a row = paused
@@ -42,6 +42,7 @@ class LiveWorker(QThread):
         self.mean: np.ndarray | None = None
         self.user_paused = False
         self.rec: S.Recorder | None = None
+        self.pause = PauseDetector()
 
     # --- commands (called from the UI thread) -------------------------- #
     def set_game(self, game: G.Game | None, start: float | None = None, sigma: float = 600):
@@ -151,6 +152,7 @@ class LiveWorker(QThread):
 
                 win, fresh = capture.find_game(self.game.meta.get("exe", ""))
                 if win is None:
+                    self.pause.reset()
                     if last_t is not None and self.rec is not None:
                         self.rec.add(S.AWAY)
                     last_t, prev_tiny, still = None, None, 0
@@ -175,16 +177,20 @@ class LiveWorker(QThread):
                     still = 0
                 prev_tiny = small
                 if still >= STATIC_TICKS:
+                    self.pause.reset()
                     if still == STATIC_TICKS and self.rec is not None:
                         self.rec.add(S.STILL)
                     self._emit("still")
                     continue
 
-                self.tracker.predict(dt)
                 dark = float(small.mean()) < DARK_LEVEL
-                q_raw = None
-                if not dark:
-                    q_raw = E.get().embed(frame)[0]
+                q_raw = None if dark else E.get().embed(frame)[0]
+                # Paused (a menu, the map, a pause screen): time spent here isn't
+                # progress, so the tracker doesn't move forward.
+                paused = self.pause.update(q_raw)
+                if not paused:
+                    self.tracker.predict(dt)
+                if q_raw is not None:
                     self.tracker.observe(prepare(q_raw[None], self.mean)[0])
                 self.tracker.settle(dt)
                 est = self.tracker.estimate()
@@ -195,8 +201,8 @@ class LiveWorker(QThread):
                 if n % 5 == 0:
                     C.log(f"tick pos {C.fmt_time(est.position)} conf {est.confidence:.2f} "
                           f"spread {est.spread:.0f}s best {C.fmt_time(est.best_match)} "
-                          f"z {est.zmax:.1f}{' dark' if dark else ''}")
-                self._emit("tracking", dark=dark)
+                          f"z {est.zmax:.1f}{' dark' if dark else ''}{' paused' if paused else ''}")
+                self._emit("paused" if paused else "tracking", dark=dark)
         except Exception as e:  # keep the UI alive; show the error on the card
             C.log("live worker crashed:\n" + traceback.format_exc())
             self.state.emit({"status": "error", "message": str(e)[:200],

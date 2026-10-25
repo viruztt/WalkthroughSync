@@ -78,10 +78,12 @@ class Recorder:
             C.log(f"session save failed: {e!r}")
 
 
-def replay(path: Path, tracker, mean: np.ndarray, prepare) -> dict:
+def replay(path: Path, tracker, mean: np.ndarray, prepare, pause=None) -> dict:
     """Run `tracker` over a recorded session. Returns arrays: t, recorded
-    estimate, replayed estimate, replayed confidence (per OBS/DARK tick)."""
+    estimate, replayed estimate, replayed confidence (per OBS/DARK tick).
+    `pause`: a PauseDetector, to replay with pause detection."""
     z = np.load(path)
+    paused_ticks = 0
     out_t, rec, new, conf = [], [], [], []
     for i in range(len(z["kind"])):
         k = int(z["kind"][i])
@@ -91,9 +93,15 @@ def replay(path: Path, tracker, mean: np.ndarray, prepare) -> dict:
             tracker.reset(float(z["val"][i]), float(z["val2"][i]))
         elif k == NUDGE:
             tracker.shift(float(z["val"][i]))
+        elif k == AWAY and pause is not None:
+            pause.reset()
         elif k in (OBS, DARK):
             dt = float(z["dt"][i])
-            tracker.predict(dt)
+            q_raw = z["q"][i].astype(np.float32) if k == OBS else None
+            if pause is not None and pause.update(q_raw):
+                paused_ticks += 1
+            else:
+                tracker.predict(dt)
             if k == OBS:
                 q = prepare(z["q"][i].astype(np.float32)[None], mean)[0]
                 tracker.observe(q)
@@ -105,4 +113,4 @@ def replay(path: Path, tracker, mean: np.ndarray, prepare) -> dict:
             new.append(e.position)
             conf.append(e.confidence)
     return {"t": np.array(out_t), "recorded": np.array(rec), "replayed": np.array(new),
-            "confidence": np.array(conf)}
+            "confidence": np.array(conf), "paused_ticks": paused_ticks}

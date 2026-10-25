@@ -281,3 +281,32 @@ def prepare(raw: np.ndarray, mean: np.ndarray) -> np.ndarray:
     x = raw.astype(np.float32) - mean.astype(np.float32)
     x /= np.linalg.norm(x, axis=-1, keepdims=True) + 1e-8
     return x
+
+
+class PauseDetector:
+    """'The game is paused': consecutive screenshots that look practically
+    the same. Works on the embeddings rather than pixels, so a pause menu or
+    skill tree with an animated portrait or drifting particles still counts
+    (pixel checks miss those), while normal play — even standing still with
+    the camera swaying — doesn't. While paused the tracker doesn't advance."""
+
+    SIM = 0.97      # raw-embedding cosine between consecutive screenshots …
+    RUN = 2         # … this many times in a row (i.e. three alike screenshots)
+
+    def __init__(self):
+        self.prev: np.ndarray | None = None
+        self.run = 0
+
+    def reset(self) -> None:
+        self.prev, self.run = None, 0
+
+    def update(self, q_raw: np.ndarray | None) -> bool:
+        if q_raw is None:          # black / loading screen: not a pause
+            self.run = 0
+            return False
+        q = np.asarray(q_raw, dtype=np.float32).reshape(-1)
+        q = q / (np.linalg.norm(q) + 1e-8)
+        same = self.prev is not None and float(q @ self.prev) >= self.SIM
+        self.run = self.run + 1 if same else 0
+        self.prev = q
+        return self.run >= self.RUN

@@ -52,7 +52,7 @@ Run **`install_startup.bat`** if you want it to start with Windows.
 * **Donut** — percentage through the walkthrough. Then your position, and a status dot:
   green *confident*, amber *fairly sure / searching*, grey *waiting / paused*.
 * **Minimal (percentage only)** (right-click): shrinks the widget to a small
-  pill showing just *12.34%* and the status dot (green confident, amber unsure
+  pill showing just *12.34%* (or *12%* — untick *Decimals*) and the status dot (green confident, amber unsure
   or analysing, grey waiting for the game or paused, red on errors). Hover for
   details.
 * **Progress text** (right-click): the line under the name shows your position
@@ -81,8 +81,10 @@ Run **`install_startup.bat`** if you want it to start with Windows.
      by how much the best match stands out, so a dark corridor or a menu that
      looks like half the game barely moves anything, while a distinctive
      cutscene shot pulls hard.
-   * Black screens, a frozen picture (pause menu) and time with the game in
-     the background don't count.
+   * Pauses don't count: when consecutive screenshots look practically the
+     same (a pause screen, the map, a skill tree — animated or not), the
+     tracker stops moving forward until the picture changes. Black screens and
+     time with the game in the background don't count either.
 4. **Self-check** — after indexing, it simulates slow, noisy playthroughs
    from the walkthrough's own frames and records how close it stayed (`replay.txt`).
 

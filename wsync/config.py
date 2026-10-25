@@ -23,6 +23,7 @@ DEFAULTS = {
     "opacity": 0.93,
     "window_layer": "top",     # "top" | "normal" | "bottom"
     "layout": "full",          # "full" card | "minimal" (just "12.34%")
+    "minimal_decimals": True,  # minimal mode: 12.34% (True) or 12% (False)
     "show_thumb": True,        # show the matched walkthrough frame
     "time_text": "position",   # line under the name: "position" | "remaining" | "off"
     "percent_text": False,     # … plus the percentage on that line
@@ -59,6 +60,7 @@ def load() -> dict:
     if cfg["time_text"] not in ("position", "remaining", "off"):
         cfg["time_text"] = "position"
     cfg["percent_text"] = bool(cfg["percent_text"])
+    cfg["minimal_decimals"] = bool(cfg["minimal_decimals"])
     if not isinstance(cfg.get("position"), dict):
         cfg["position"] = {"x": None, "y": None}
     try:

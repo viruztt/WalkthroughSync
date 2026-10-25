@@ -92,7 +92,7 @@ def replay_session_cli(args: list[str]) -> int:
 
     from wsync import config as C
     from wsync import sessions as S
-    from wsync.tracker import Tracker, prepare
+    from wsync.tracker import PauseDetector, Tracker, prepare
     g = find_game("")
     if args and Path(args[0]).exists():
         path = Path(args[0])
@@ -105,7 +105,8 @@ def replay_session_cli(args: list[str]) -> int:
         path = files[-1]
     raw, mean = g.load_index()
     emb = prepare(raw, mean)
-    r = S.replay(path, Tracker(emb, weight=g.load_weight(emb)), mean, prepare)
+    r = S.replay(path, Tracker(emb, weight=g.load_weight(emb)), mean, prepare,
+                 pause=PauseDetector())
     t0 = r["t"][0] if len(r["t"]) else 0
     print(f"{path.name}: {len(r['t'])} screenshots")
     print(" minute   recorded   replayed   conf")
@@ -126,7 +127,7 @@ def selftest() -> int:
     import numpy as np
 
     from wsync import config as C
-    from wsync.tracker import Tracker, distinctiveness, prepare
+    from wsync.tracker import PauseDetector, Tracker, distinctiveness, prepare
 
     ok = True
 
@@ -217,6 +218,15 @@ def selftest() -> int:
     w = distinctiveness(emb)
     check("distinctiveness in 0..1", w.shape == (n,) and 0 <= w.min() and w.max() <= 1,
           f"min {w.min():.2f}")
+
+    # Pause detection: three practically identical screenshots in a row.
+    pd = PauseDetector()
+    menu_q = rng.normal(size=d).astype(np.float32)
+    seq = [pd.update(menu_q + rng.normal(size=d).astype(np.float32) * 0.01) for _ in range(4)]
+    check("paused after three alike screenshots", seq == [False, False, True, True], str(seq))
+    check("unpauses as soon as the screen changes",
+          pd.update(rng.normal(size=d).astype(np.float32)) is False)
+    check("black screen isn't a pause", pd.update(None) is False)
 
     # Uninformative screenshot (looks like everything) must not move the belief.
     tr = Tracker(emb)
