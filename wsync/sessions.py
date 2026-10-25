@@ -93,8 +93,8 @@ def replay(path: Path, tracker, mean: np.ndarray, prepare, pause=None) -> dict:
             tracker.reset(float(z["val"][i]), float(z["val2"][i]))
         elif k == NUDGE:
             tracker.shift(float(z["val"][i]))
-        elif k == AWAY and pause is not None:
-            pause.reset()
+        elif k in (AWAY, STILL) and pause is not None:
+            pause.reset()           # as the live tracker does
         elif k in (OBS, DARK):
             dt = float(z["dt"][i])
             q_raw = z["q"][i].astype(np.float32) if k == OBS else None
