@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-WEIGHT_VERSION = 1   # bump when distinctiveness() changes, to recompute caches
+WEIGHT_VERSION = 2   # bump when distinctiveness() changes, to recompute caches
 
 
 @dataclass
@@ -61,12 +61,15 @@ class Tracker:
     SAME_SHOT = 0.92      # a screenshot this similar to the last one counted adds nothing new …
     NEW_SHOT = 0.77       # … and one below this counts in full
 
-    def __init__(self, emb: np.ndarray, step: float = 1.0, weight: np.ndarray | None = None):
+    def __init__(self, emb: np.ndarray, step: float = 1.0, weight: np.ndarray | None = None,
+                 new_shot: float | None = None, same_shot: float | None = None):
         """emb: (N, D) float32, centred and L2-normalised per row.
         weight: (N,) 0..1, how unique each frame is (see distinctiveness());
         frames that recur all over the video (fades, loading, menus) count less."""
         self.emb = np.ascontiguousarray(emb, dtype=np.float32)
         self.n = int(self.emb.shape[0])
+        if new_shot is not None and same_shot is not None:   # see calibration()
+            self.NEW_SHOT, self.SAME_SHOT = float(new_shot), float(same_shot)
         self.step = float(step)
         self.weight = None if weight is None else np.asarray(weight, dtype=np.float32)
         self.pos_axis = np.arange(self.n, dtype=np.float64) * self.step
@@ -271,9 +274,24 @@ def distinctiveness(emb: np.ndarray, gap_s: int = 600, block: int = 2048,
             i = s + k
             sim[k, max(0, i - gap_s):min(n, i + gap_s + 1)] = -1.0
         far[s:s + block] = sim.max(axis=1)
-    lo = max(0.65, float(np.percentile(far, 85)))
-    hi = lo + 0.15
+    # thresholds from this video's own spread, so they suit any image model
+    lo = float(np.percentile(far, 85))
+    hi = max(lo + 0.05, float(np.percentile(far, 97.5)))
     return (1.0 - np.clip((far - lo) / (hi - lo), 0.0, 1.0)).astype(np.float32)
+
+
+def calibration(raw: np.ndarray, emb: np.ndarray) -> dict:
+    """Model-specific thresholds, read off how alike the walkthrough's own
+    frames 2 seconds apart are. Different image models put similarities on
+    different scales; these percentiles reproduce the values tuned on CLIP
+    (0.77 / 0.92 / 0.97) and give any other model its equivalents."""
+    c2 = (emb[:-2] * emb[2:]).sum(axis=1)
+    r = raw / (np.linalg.norm(raw, axis=1, keepdims=True) + 1e-8)
+    r2 = (r[:-2] * r[2:]).sum(axis=1)
+    new_shot = float(np.percentile(c2, 85))
+    same_shot = max(new_shot + 0.02, float(np.percentile(c2, 97)))
+    pause_sim = float(np.percentile(r2, 98.3))
+    return {"new_shot": new_shot, "same_shot": same_shot, "pause_sim": pause_sim}
 
 
 def prepare(raw: np.ndarray, mean: np.ndarray) -> np.ndarray:
@@ -293,7 +311,9 @@ class PauseDetector:
     SIM = 0.97      # raw-embedding cosine between consecutive screenshots …
     RUN = 2         # … this many times in a row (i.e. three alike screenshots)
 
-    def __init__(self):
+    def __init__(self, sim: float | None = None):
+        if sim is not None:          # see calibration()
+            self.SIM = float(sim)
         self.prev: np.ndarray | None = None
         self.run = 0
 

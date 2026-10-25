@@ -92,7 +92,7 @@ def replay_session_cli(args: list[str]) -> int:
 
     from wsync import config as C
     from wsync import sessions as S
-    from wsync.tracker import PauseDetector, Tracker, prepare
+    from wsync.tracker import PauseDetector, Tracker, calibration, prepare
     g = find_game("")
     if args and Path(args[0]).exists():
         path = Path(args[0])
@@ -105,8 +105,10 @@ def replay_session_cli(args: list[str]) -> int:
         path = files[-1]
     raw, mean = g.load_index()
     emb = prepare(raw, mean)
-    r = S.replay(path, Tracker(emb, weight=g.load_weight(emb)), mean, prepare,
-                 pause=PauseDetector())
+    cal = calibration(raw, emb)
+    r = S.replay(path, Tracker(emb, weight=g.load_weight(emb), new_shot=cal["new_shot"],
+                               same_shot=cal["same_shot"]), mean, prepare,
+                 pause=PauseDetector(cal["pause_sim"]))
     t0 = r["t"][0] if len(r["t"]) else 0
     print(f"{path.name}: {len(r['t'])} screenshots")
     print(" minute   recorded   replayed   conf")

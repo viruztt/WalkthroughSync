@@ -69,8 +69,8 @@ Run **`install_startup.bat`** if you want it to start with Windows.
 ## How it works
 
 1. **Index** — `yt-dlp` fetches a video-only 360p copy; `ffmpeg` decodes it in
-   parallel chunks at 1 fps, 320×180. Every frame is embedded with OpenCLIP
-   ViT-B/16 (the image half of CLIP) on the GPU.
+   parallel chunks at 1 fps, 320×180. Every frame is embedded on the GPU with an
+   image model (DINOv2 ViT-B/14 by default — see *Image models*).
 2. **Capture** — every 2 seconds the game window is grabbed, cropped to 16:9
    (so ultrawide works), scaled to 320×180 and embedded the same way.
 3. **Track** — a histogram filter over every second of the video:
@@ -123,16 +123,31 @@ screenshots); set `"hide_from_capture": false` to change that.
 
 ## Image models
 
-Walkthroughs are analysed with OpenCLIP ViT-B/16 by default. `"model"` in
-`config.json` picks another for newly added games: `clip-b16`, `clip-l14`,
-`siglip2-b16`, `dinov2-b14` or `dinov2-l14`. Each game keeps the model it was
-analysed with, so switching never mixes the two (use *Re-analyse walkthrough*
-to move a game over).
+New walkthroughs are analysed with **DINOv2 ViT-B/14**. On recorded play
+(321 screenshots of Resonance with known positions) it put the best match
+within a minute of where the player was for 71% of screenshots, against 58%
+for CLIP ViT-B/16, and the right moment stood out much more clearly:
 
-To compare them on real play, a `data/benchmark_request.json` listing recorded
-screenshots and where you were in each (see `wsync/benchmark.py`) makes the
-widget test every model in the background at start-up and write the scores to
-`data/benchmark.txt`.
+| Model | Best match within 60 s | Among top 5 | Stands out (z) | Frames/s on an RTX 5090 |
+|---|---|---|---|---|
+| CLIP ViT-B/16 (LAION-2B) | 57.9% | 75.4% | 3.75 | 3,281 |
+| CLIP ViT-L/14 (DataComp-XL) | 55.8% | 72.6% | 3.71 | 866 |
+| SigLIP 2 ViT-B/16 | 60.4% | 78.8% | 3.91 | 3,829 |
+| **DINOv2 ViT-B/14** | **70.7%** | **82.6%** | **5.12** | 2,064 |
+| DINOv2 ViT-L/14 | 70.7% | 84.7% | 4.95 | 864 |
+
+`"image_model"` in `config.json` picks another for newly added games
+(`clip-b16`, `clip-l14`, `siglip2-b16`, `dinov2-b14`, `dinov2-l14`; blank =
+recommended). Each game keeps the model it was analysed with, so switching
+never mixes two (games from before the choice use CLIP; *Re-analyse
+walkthrough* moves one over). Thresholds that depend on the model's similarity
+scale (what counts as a new shot, as a pause, as a look-alike) are read off
+each walkthrough's own frames.
+
+To compare models on real play, a `data/benchmark_request.json` listing
+recorded screenshots and where you were in each (see `wsync/benchmark.py`)
+makes the widget test every model in the background at start-up and write the
+scores to `data/benchmark.txt`.
 
 ## Limits
 
@@ -150,7 +165,7 @@ run.bat              first-run installer + launcher
 wsync/
   tracker.py         the histogram filter (numpy only)
   indexer.py         download, decode, embed, self-check
-  embedder.py        OpenCLIP on the GPU
+  embedder.py        image models (DINOv2, CLIP, SigLIP 2) on the GPU
   capture.py         foreground game window + screen grab
   workers.py         live tracking thread, indexing thread
   sessions.py        records play sessions and replays them for tuning

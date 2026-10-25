@@ -28,7 +28,7 @@ import numpy as np
 from . import config as C
 from . import embedder as E
 from . import games as G
-from .tracker import Tracker, prepare
+from .tracker import Tracker, calibration, prepare
 
 W, H = 320, 180
 FRAME_BYTES = W * H * 3
@@ -264,7 +264,7 @@ def decode_and_embed(video: Path, duration: float, progress: Progress,
 def build(game: G.Game, progress: Progress, cancel: threading.Event,
           keep_video: bool = False) -> None:
     url = game.meta["url"]
-    key = C.load().get("model") or E.DEFAULT_KEY
+    key = C.load().get("image_model") or E.DEFAULT_KEY
     if key not in E.MODELS:
         key = E.DEFAULT_KEY
     game.meta["status"] = "indexing"
@@ -363,11 +363,12 @@ def replay(game: G.Game, segments: int = 4, minutes: float = 15, seed: int = 7,
     raw, mean = game.load_index()
     emb = prepare(raw, mean)
     weight = game.load_weight(emb)
+    cal = calibration(raw, emb)
     thumbs = game.thumbs()
     if thumbs is None:
         return "no thumbnails"
     dur = game.duration
-    model = E.get(game.meta.get("model_key") or E.DEFAULT_KEY)
+    model = E.get(game.model_key)
     rng = random.Random(seed)
     seg_len = minutes * 60
     lines, errs_all, within_all = [], [], []
@@ -392,7 +393,7 @@ def replay(game: G.Game, segments: int = 4, minutes: float = 15, seed: int = 7,
             qs.append(model.embed(np.stack(imgs[i:i + 64])))
         q = prepare(np.concatenate(qs), mean)
 
-        tr = Tracker(emb, weight=weight)
+        tr = Tracker(emb, weight=weight, new_shot=cal["new_shot"], same_shot=cal["same_shot"])
         guess = start + rng.uniform(-300, 300)
         tr.reset(guess, 600)
         errs = []

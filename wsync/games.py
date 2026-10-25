@@ -47,6 +47,11 @@ class Game:
         return self.meta.get("name") or self.slug
 
     @property
+    def model_key(self) -> str:
+        """The image model this game's walkthrough was analysed with."""
+        return self.meta.get("model_key") or "clip-b16"   # games from before the choice
+
+    @property
     def ready(self) -> bool:
         return self.meta.get("status") == "ready" and (self.dir / "emb.npy").exists()
 

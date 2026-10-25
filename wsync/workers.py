@@ -15,7 +15,7 @@ from . import embedder as E
 from . import games as G
 from . import indexer
 from . import sessions as S
-from .tracker import PauseDetector, Tracker, prepare
+from .tracker import PauseDetector, Tracker, calibration, prepare
 
 STATIC_DIFF = 1.2      # mean abs change (0-255) of the tiny frame below which it's "still"
 STATIC_TICKS = 3       # this many still screenshots in a row = paused
@@ -84,7 +84,12 @@ class LiveWorker(QThread):
         raw, mean = game.load_index()
         self.mean = mean
         emb = prepare(raw, mean)
-        self.tracker = Tracker(emb, weight=game.load_weight(emb))
+        cal = calibration(raw, emb)
+        self.tracker = Tracker(emb, weight=game.load_weight(emb),
+                               new_shot=cal["new_shot"], same_shot=cal["same_shot"])
+        self.pause = PauseDetector(cal["pause_sim"])
+        C.log(f"live {game.slug}: model {game.model_key}, shots {cal['new_shot']:.3f}/"
+              f"{cal['same_shot']:.3f}, pause {cal['pause_sim']:.4f}")
         if start is None:
             start = game.position or 0.0
         self.tracker.reset(start, sigma)
@@ -144,7 +149,7 @@ class LiveWorker(QThread):
                     last_t = None
                     self._emit("user_paused")
                     continue
-                key = self.game.meta.get("model_key") or E.DEFAULT_KEY
+                key = self.game.model_key
                 if not E.loaded(key):
                     self._emit("loading")
                     E.get(key)

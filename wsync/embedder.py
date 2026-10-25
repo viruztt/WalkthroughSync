@@ -30,10 +30,11 @@ MODELS = {
     "dinov2-l14": dict(kind="timm", name="vit_large_patch14_dinov2.lvd142m",
                        label="DINOv2 ViT-L/14"),
 }
-DEFAULT_KEY = "clip-b16"
-# kept for older callers / meta
-MODEL = MODELS[DEFAULT_KEY]["name"]
-PRETRAINED = MODELS[DEFAULT_KEY]["pretrained"]
+# DINOv2 ViT-B/14 won the benchmark on real play (best match within 60 s for
+# 71% of screenshots vs 58% for CLIP ViT-B/16; the right moment stands out
+# far more: z 5.1 vs 3.75). Games analysed before it existed used CLIP.
+DEFAULT_KEY = "dinov2-b14"
+LEGACY_KEY = "clip-b16"
 
 _instances: dict[str, "Embedder"] = {}
 _instance_lock = threading.Lock()

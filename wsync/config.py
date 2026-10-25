@@ -30,7 +30,7 @@ DEFAULTS = {
     "interval": 2.0,           # seconds between screenshots
     "current_game": "",
     "keep_video": False,       # keep the downloaded walkthrough after indexing
-    "model": "clip-b16",       # image model for newly analysed walkthroughs (embedder.MODELS)
+    "image_model": "",         # for newly analysed walkthroughs; "" = recommended (embedder.MODELS)
     "hide_from_capture": True, # widget invisible to screenshots / recordings
     "record_sessions": True,   # keep what the tracker saw, for tuning (~3 MB/hour)
     "position": {"x": None, "y": None},
