@@ -2,8 +2,10 @@
 
 Each session is written to data/games/<game>/sessions/<start>.npz:
 one row per screenshot tick (time, dt, kind, the screenshot's embedding,
-the estimate shown) plus your manual corrections. A small JPEG of every
-15th screenshot goes into a folder next to it. ~3 MB per hour of play.
+the estimate shown, what the audio matched) plus your manual corrections. A
+small JPEG of every 15th screenshot goes into a folder next to it (~3 MB per
+hour), and while audio fingerprints are on trial the game audio itself is
+kept as <start>.pcm (8 kHz mono int16, ~58 MB per hour).
 
 With that, tracker changes can be tested against your real playthrough
 (`main.py --replay-session FILE`) instead of simulations.
@@ -35,11 +37,13 @@ class Recorder:
         self._last_flush = time.monotonic()
         self._ticks = 0
         self._frames = 0
+        self.stamp = stamp
+        self.audio_marks: list | None = None     # (wall time, samples) of the .pcm, if recorded
 
     def add(self, kind: int, dt: float = 0.0, q: np.ndarray | None = None,
             val: float = 0.0, val2: float = 0.0, est: float = -1.0, conf: float = 0.0,
-            frame: np.ndarray | None = None) -> None:
-        self.rows.append((time.time(), dt, kind, val, val2, est, conf))
+            frame: np.ndarray | None = None, audio: tuple = (-1.0, 0, 0)) -> None:
+        self.rows.append((time.time(), dt, kind, val, val2, est, conf, *audio))
         self.qs.append(np.zeros(self.dim, np.float16) if q is None
                        else np.asarray(q, np.float16).reshape(-1))
         if kind in (OBS, DARK):
@@ -61,6 +65,12 @@ class Recorder:
         except Exception:
             pass
 
+    def _pcm_marks(self) -> dict:
+        if not self.audio_marks:
+            return {}
+        m = np.array(self.audio_marks, dtype=np.float64)
+        return {"pcm_t": m[:, 0], "pcm_n": m[:, 1].astype(np.int64)}
+
     def flush(self) -> None:
         self._last_flush = time.monotonic()
         if not self.rows:
@@ -72,7 +82,10 @@ class Recorder:
             np.savez_compressed(tmp, t=r[:, 0], dt=r[:, 1].astype(np.float32),
                                 kind=r[:, 2].astype(np.int8), val=r[:, 3].astype(np.float32),
                                 val2=r[:, 4].astype(np.float32), est=r[:, 5].astype(np.float32),
-                                conf=r[:, 6].astype(np.float32), q=np.stack(self.qs))
+                                conf=r[:, 6].astype(np.float32), q=np.stack(self.qs),
+                                audio_t=r[:, 7].astype(np.float32),
+                                audio_c1=r[:, 8].astype(np.int16), audio_c2=r[:, 9].astype(np.int16),
+                                **self._pcm_marks())
             tmp.replace(self.path)
         except Exception as e:
             C.log(f"session save failed: {e!r}")

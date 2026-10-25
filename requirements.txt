@@ -5,4 +5,5 @@ mss
 imageio-ffmpeg
 yt-dlp[default]
 open_clip_torch
+soundcard
 # torch + torchvision are installed by run.bat from the PyTorch CUDA index

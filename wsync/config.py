@@ -33,6 +33,7 @@ DEFAULTS = {
     "image_model": "",         # for newly analysed walkthroughs; "" = recommended (embedder.MODELS)
     "hide_from_capture": True, # widget invisible to screenshots / recordings
     "record_sessions": True,   # keep what the tracker saw, for tuning (~3 MB/hour)
+    "record_audio": True,      # … and the game audio while audio matching is on trial (~58 MB/hour)
     "position": {"x": None, "y": None},
 }
 

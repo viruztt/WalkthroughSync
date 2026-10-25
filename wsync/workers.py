@@ -9,6 +9,7 @@ import traceback
 import numpy as np
 from PySide6.QtCore import QThread, Signal
 
+from . import audio as A
 from . import capture
 from . import config as C
 from . import embedder as E
@@ -31,10 +32,12 @@ class LiveWorker(QThread):
     state = Signal(dict)
     exe_detected = Signal(str, str)   # slug, exe
 
-    def __init__(self, interval: float, record: bool = True):
+    def __init__(self, interval: float, record: bool = True, record_audio: bool = True):
         super().__init__()
         self.interval = interval
         self.record = record
+        self.record_audio = record_audio
+        self.audio_index: A.Index | None = None
         self.cmds: queue.Queue = queue.Queue()
         self._stop = threading.Event()
         self.game: G.Game | None = None
@@ -78,6 +81,9 @@ class LiveWorker(QThread):
         if self.rec is not None:
             self.rec.flush()
             self.rec = None
+        if A._capture is not None:
+            A._capture.record_to(None)
+        self.audio_index = None
         self.game, self.tracker = game, None
         if game is None or not game.ready:
             return
@@ -96,7 +102,47 @@ class LiveWorker(QThread):
         if self.record:
             self.rec = S.Recorder(game.dir, raw.shape[1])
             self.rec.add(S.START, val=start, val2=sigma)
+        # Audio fingerprints (shadow mode: matched, shown and recorded, but not
+        # yet steering the tracker)
+        if game.audio_path.exists():
+            try:
+                self.audio_index = A.Index.load(game.audio_path)
+                cap = A.capture()
+                if self.rec is not None and self.record_audio:
+                    self.rec.dir.mkdir(parents=True, exist_ok=True)
+                    cap.record_to(self.rec.dir / f"{self.rec.stamp}.pcm")
+                    self.rec.audio_marks = cap.marks
+                C.log(f"live {game.slug}: audio fingerprints loaded ({len(self.audio_index.h):,})")
+            except Exception as e:
+                C.log(f"live {game.slug}: audio unavailable: {e!r}")
+                self.audio_index = None
         C.log(f"live {game.slug}: start at {C.fmt_time(start)} +-{sigma:.0f}s")
+
+    AUDIO_WINDOW = 8.0      # seconds of game audio per match
+    AUDIO_QUIET = 0.003     # RMS below this is silence
+
+    def _listen(self) -> tuple:
+        """(walkthrough seconds, aligned hashes, runner-up) for the last few
+        seconds of what the PC is playing, or (-1, 0, 0)."""
+        if self.audio_index is None or A._capture is None or not A._capture.ok:
+            return (-1.0, 0, 0)
+        x = A._capture.last(self.AUDIO_WINDOW)
+        if x is None or float(np.sqrt(np.mean(x * x))) < self.AUDIO_QUIET:
+            return (-1.0, 0, 0)
+        try:
+            end, c1, c2 = self.audio_index.match(x)
+            return (round(end, 2), c1, c2)
+        except Exception as e:
+            C.log(f"audio match failed: {e!r}")
+            return (-1.0, 0, 0)
+
+    def _audio_state(self) -> str:
+        if self.audio_index is None:
+            return "none"
+        cap = A._capture
+        if cap is None or not cap.ok:
+            return "error: " + (cap.error if cap else "not started")
+        return "on"
 
     def _handle(self, cmd) -> None:
         kind = cmd[0]
@@ -142,6 +188,9 @@ class LiveWorker(QThread):
                 if handled and self.tracker is not None:
                     self._emit("updated")
 
+                if A._capture is not None and (self.game is None or self.tracker is None
+                                               or self.user_paused):
+                    A._capture.writing = False
                 if self.game is None or self.tracker is None:
                     last_t = None
                     continue
@@ -158,6 +207,8 @@ class LiveWorker(QThread):
 
                 win, fresh = capture.find_game(self.game.meta.get("exe", ""))
                 if win is None:
+                    if A._capture is not None:
+                        A._capture.writing = False
                     self.pause.reset()
                     if last_t is not None and self.rec is not None:
                         self.rec.add(S.AWAY)
@@ -183,6 +234,8 @@ class LiveWorker(QThread):
                     still = 0
                 prev_tiny = small
                 if still >= STATIC_TICKS:
+                    if A._capture is not None:
+                        A._capture.writing = False
                     self.pause.reset()
                     if still == STATIC_TICKS and self.rec is not None:
                         self.rec.add(S.STILL)
@@ -200,15 +253,21 @@ class LiveWorker(QThread):
                     self.tracker.observe(prepare(q_raw[None], self.mean)[0])
                 self.tracker.settle(dt)
                 est = self.tracker.estimate()
+                if A._capture is not None:
+                    A._capture.writing = not paused
+                heard = self._listen()
                 if self.rec is not None:
                     self.rec.add(S.DARK if dark else S.OBS, dt, q_raw, est=est.position,
-                                 conf=est.confidence, frame=frame)
+                                 conf=est.confidence, frame=frame, audio=heard)
                 n += 1
                 if n % 5 == 0:
                     C.log(f"tick pos {C.fmt_time(est.position)} conf {est.confidence:.2f} "
                           f"spread {est.spread:.0f}s best {C.fmt_time(est.best_match)} "
-                          f"z {est.zmax:.1f}{' dark' if dark else ''}{' paused' if paused else ''}")
-                self._emit("paused" if paused else "tracking", dark=dark)
+                          f"z {est.zmax:.1f}{' dark' if dark else ''}{' paused' if paused else ''}"
+                          + (f" audio {C.fmt_time(heard[0])} x{heard[1]}/{heard[2]}"
+                             if heard[0] >= 0 else ""))
+                self._emit("paused" if paused else "tracking", dark=dark, audio=heard,
+                           audio_state=self._audio_state())
         except Exception as e:  # keep the UI alive; show the error on the card
             C.log("live worker crashed:\n" + traceback.format_exc())
             self.state.emit({"status": "error", "message": str(e)[:200],

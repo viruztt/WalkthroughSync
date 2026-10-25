@@ -155,6 +155,66 @@ def download(url: str, folder: Path, progress: Progress, cancel: threading.Event
     return vids[0]
 
 
+def download_audio(url: str, folder: Path, progress: Progress, cancel: threading.Event) -> Path:
+    """The walkthrough's audio track alone (small: ~50 kbps)."""
+    for old in folder.glob("audio.*"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    cmd = _ytdlp(["-f", "ba[abr<=96]/ba/wa", "-o", str(folder / "audio.%(ext)s"), "--newline",
+                  "--no-part", "--progress-template",
+                  "download:PROG %(progress.downloaded_bytes)s %(progress.total_bytes)s "
+                  "%(progress.total_bytes_estimate)s", url])
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace", **_no_window())
+    tail: list[str] = []
+    try:
+        for line in proc.stdout:
+            if cancel.is_set():
+                proc.kill()
+                raise Cancelled()
+            line = line.strip()
+            if line.startswith("PROG"):
+                parts = line.split()
+                try:
+                    done = float(parts[1])
+                    total = next((float(p) for p in parts[2:] if p not in ("NA", "None")), 0)
+                except (ValueError, IndexError):
+                    continue
+                progress("audio", 0.3 * (done / total if total else 0),
+                         f"Downloading audio · {done / 1e6:,.0f} of {total / 1e6:,.0f} MB")
+            elif line:
+                tail = (tail + [line])[-20:]
+    finally:
+        proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError("Audio download failed: " + _last_error("\n".join(tail)))
+    files = [p for p in folder.glob("audio.*") if p.suffix not in (".part", ".ytdl")]
+    if not files:
+        raise RuntimeError("Audio download finished but no file was found.")
+    return files[0]
+
+
+def fingerprint_audio(game: G.Game, progress: Progress, cancel: threading.Event) -> None:
+    """Download the walkthrough's audio and save its fingerprints (audio_fp.npz)."""
+    from . import audio as A
+    t0 = time.time()
+    path = download_audio(game.meta["url"], game.dir, progress, cancel)
+    try:
+        idx = A.build_index(path, game.duration, ffmpeg_exe(), _no_window(),
+                            progress=lambda f: progress("audio", 0.3 + 0.7 * f,
+                                                        f"Fingerprinting audio · {f * 100:.0f}%"),
+                            cancel=cancel)
+        idx.save(game.audio_path)
+        C.log(f"audio {game.slug}: {len(idx.h):,} fingerprints in {time.time() - t0:.0f}s")
+    finally:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 def probe_duration(video: Path) -> float:
     r = subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(video)], capture_output=True,
                        text=True, encoding="utf-8", errors="replace", **_no_window())
@@ -317,6 +377,14 @@ def build(game: G.Game, progress: Progress, cancel: threading.Event,
             video.unlink()
         except OSError:
             pass
+
+    progress("audio", 0.0, "Downloading audio…")
+    try:
+        fingerprint_audio(game, progress, cancel)
+    except Cancelled:
+        raise
+    except Exception as e:  # tracking works without it
+        C.log(f"audio fingerprints for {game.slug} failed: {e!r}")
 
     game.meta["status"] = "ready"
     game.meta["indexed"] = time.strftime("%Y-%m-%dT%H:%M:%S")

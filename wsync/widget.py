@@ -64,7 +64,12 @@ class SyncWindow(QWidget):
         self.customContextMenuRequested.connect(self._menu)
 
         self.worker = LiveWorker(float(cfg.get("interval", 2.0)),
-                                 bool(cfg.get("record_sessions", True)))
+                                 bool(cfg.get("record_sessions", True)),
+                                 bool(cfg.get("record_audio", True)))
+        # older installs lack the audio-capture library: add it quietly
+        import threading
+        from . import audio
+        threading.Thread(target=audio.ensure_installed, daemon=True).start()
         self.worker.state.connect(self._on_state)
         self.worker.exe_detected.connect(self._on_exe)
         self.worker.start()
@@ -252,6 +257,7 @@ class SyncWindow(QWidget):
             stage, frac, text = self.index_info
             label = {"info": "Preparing walkthrough", "download": "Downloading walkthrough",
                      "analyse": "Analysing walkthrough", "check": "Self-check",
+                     "audio": "Fingerprinting audio",
                      "bench": "Testing image models"}.get(stage, "Working")
             return (g.name, label, text, AMBER, frac, AMBER,
                     f"{frac * 100:.0f}%")
@@ -576,6 +582,20 @@ class SyncWindow(QWidget):
                          f"confidence {self.live.get('confidence', 0) * 100:.0f}%")
             parts.append(f"Last screenshot looked most like {C.fmt_time(self.live.get('best'))} "
                          f"(distinctiveness {self.live.get('zmax', 0):.1f})")
+        ast = self.live.get("audio_state", "")
+        heard = self.live.get("audio") or (-1, 0, 0)
+        if ast == "none":
+            parts.append("Audio: no fingerprints for this game")
+        elif ast.startswith("error"):
+            parts.append("Audio: " + ast)
+        elif ast == "on":
+            from .audio import confident
+            if heard[0] >= 0 and confident(heard[1], heard[2]):
+                parts.append(f"Audio: matches {C.fmt_time(heard[0])} ({heard[1]} landmarks)")
+            elif heard[0] >= 0:
+                parts.append(f"Audio: listening (best {heard[1]} landmarks, not sure)")
+            else:
+                parts.append("Audio: listening (quiet)")
         if g.meta.get("exe"):
             parts.append(f"Game window: {g.meta['exe']}")
         if g.meta.get("selfcheck"):

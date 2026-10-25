@@ -230,6 +230,37 @@ def selftest() -> int:
           pd.update(rng.normal(size=d).astype(np.float32)) is False)
     check("black screen isn't a pause", pd.update(None) is False)
 
+    # Audio fingerprints: a synthetic 90 s "soundtrack" (notes + noise bursts)
+    from wsync import audio as A
+    arng = np.random.default_rng(5)
+
+    def track(seconds):
+        parts, total = [], 0
+        while total < seconds * A.SR:
+            ln = int(A.SR * arng.uniform(0.2, 1.0))
+            tt = np.arange(ln) / A.SR
+            if arng.random() < 0.6:
+                f0 = 110 * 2 ** (arng.integers(0, 30) / 12)
+                x = sum(0.6 ** k * np.sin(2 * np.pi * f0 * (k + 1) * tt) for k in range(4))
+            else:
+                x = arng.normal(size=ln) * np.exp(-tt * 6)
+            parts.append((x * arng.uniform(0.2, 1)).astype(np.float32))
+            total += ln
+        return np.concatenate(parts)[:seconds * A.SR]
+    song, other_song = track(90), track(30)
+    aidx = A.Index(*A.hashes(*A.peaks(song)))
+    clip = song[40 * A.SR:48 * A.SR] * 0.5 + arng.normal(size=8 * A.SR).astype(np.float32) * 0.05
+    end, c1, c2 = aidx.match(clip)
+    check("audio: noisy 8 s clip found at the right second", abs(end - 48) < 0.5
+          and A.confident(c1, c2), f"{end:.2f}s, {c1}/{c2} landmarks")
+    end, c1, c2 = aidx.match(other_song[10 * A.SR:18 * A.SR])
+    check("audio: unrelated sound isn't a confident match", not A.confident(c1, c2), f"{c1}/{c2}")
+    check("audio: silence matches nothing", aidx.match(np.zeros(8 * A.SR, np.float32))[1] == 0)
+    rs = A.Resampler(48000)
+    tone = np.sin(2 * np.pi * 440 * np.arange(48000) / 48000).astype(np.float32)
+    out = np.concatenate([rs(tone[i:i + 4800]) for i in range(0, 48000, 4800)])
+    check("audio: 48 kHz -> 8 kHz resampler keeps length", abs(len(out) - 8000) <= 1, str(len(out)))
+
     # Uninformative screenshot (looks like everything) must not move the belief.
     tr = Tracker(emb)
     tr.reset(3000, 20)

@@ -52,6 +52,10 @@ class Game:
         return self.meta.get("model_key") or "clip-b16"   # games from before the choice
 
     @property
+    def audio_path(self) -> Path:
+        return self.dir / "audio_fp.npz"
+
+    @property
     def ready(self) -> bool:
         return self.meta.get("status") == "ready" and (self.dir / "emb.npy").exists()
 

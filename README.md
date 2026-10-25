@@ -149,6 +149,26 @@ recorded screenshots and where you were in each (see `wsync/benchmark.py`)
 makes the widget test every model in the background at start-up and write the
 scores to `data/benchmark.txt`.
 
+## Audio fingerprints (on trial)
+
+Cutscene dialogue and music sound the same in every playthrough, so sound can
+pin down a position exactly where pictures are ambiguous. When a walkthrough
+is analysed its audio track is fingerprinted too (Shazam-style: pairs of
+spectral peaks hashed with their time gap, ~2 minutes for an 8-hour video).
+While you play, what your PC outputs is captured (WASAPI loopback of the
+default speakers) and the last 8 seconds are matched every 2 seconds. A match
+needs at least 12 landmarks lining up and twice as many as anywhere else; on
+synthetic tests that found the right half-second for 80–95% of clips even
+with noise as loud as the sound, with no wrong confident matches.
+
+For now this runs in *shadow mode*: matches are shown in the tooltip and
+recorded with the session, but don't move the tracker until real sessions
+show how much to trust them. While it's on trial the game audio is saved with
+the session (`sessions/<start>.pcm`, ~58 MB/hour, only while the game window
+is in focus — never voice chat or videos you tab out to);
+`"record_audio": false` turns that off. Games analysed before audio support
+have no fingerprints.
+
 ## Limits
 
 * Open-world and non-linear games, where you do things in a different order
@@ -170,6 +190,7 @@ wsync/
   workers.py         live tracking thread, indexing thread
   sessions.py        records play sessions and replays them for tuning
   benchmark.py       compares image models on recorded screenshots
+  audio.py           audio fingerprints and loopback capture
   widget.py          the card, menus, tray
   dialogs.py         New game / set position
   games.py           per-game folders
