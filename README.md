@@ -121,6 +121,19 @@ screenshots it matches (this also keeps it out of your own recordings and
 screenshots); set `"hide_from_capture": false` to change that.
 `data/`, `models/` and `config.json` are git-ignored.
 
+## Image models
+
+Walkthroughs are analysed with OpenCLIP ViT-B/16 by default. `"model"` in
+`config.json` picks another for newly added games: `clip-b16`, `clip-l14`,
+`siglip2-b16`, `dinov2-b14` or `dinov2-l14`. Each game keeps the model it was
+analysed with, so switching never mixes the two (use *Re-analyse walkthrough*
+to move a game over).
+
+To compare them on real play, a `data/benchmark_request.json` listing recorded
+screenshots and where you were in each (see `wsync/benchmark.py`) makes the
+widget test every model in the background at start-up and write the scores to
+`data/benchmark.txt`.
+
 ## Limits
 
 * Open-world and non-linear games, where you do things in a different order
@@ -141,6 +154,7 @@ wsync/
   capture.py         foreground game window + screen grab
   workers.py         live tracking thread, indexing thread
   sessions.py        records play sessions and replays them for tuning
+  benchmark.py       compares image models on recorded screenshots
   widget.py          the card, menus, tray
   dialogs.py         New game / set position
   games.py           per-game folders

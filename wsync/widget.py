@@ -19,7 +19,7 @@ from . import capture
 from . import config as C
 from . import games as G
 from .dialogs import NewGameDialog, ask_position
-from .workers import IndexWorker, LiveWorker
+from .workers import BenchWorker, IndexWorker, LiveWorker
 
 BG = QColor(14, 15, 20, 225)
 TEXT = QColor(238, 240, 245)
@@ -78,6 +78,11 @@ class SyncWindow(QWidget):
         if g is not None and not g.ready and g.meta.get("url") \
                 and g.meta.get("status") in ("new", "indexing", "failed"):
             QTimer.singleShot(1500, lambda: self.index_worker is None and self._index(g))
+        else:
+            from . import benchmark
+            req = benchmark.pending()
+            if req is not None:
+                QTimer.singleShot(3000, lambda: self._benchmark(req.get("game", "")))
 
         screens = QGuiApplication.instance()
         screens.screenAdded.connect(lambda *_: QTimer.singleShot(500, self.place))
@@ -139,6 +144,17 @@ class SyncWindow(QWidget):
         self._resize()
         self.update()
 
+    def _benchmark(self, slug: str):
+        if self.index_worker is not None:
+            return
+        self.index_info = ("bench", 0.0, "Starting…")
+        self.index_worker = BenchWorker(slug)
+        self.index_worker.progress.connect(self._on_index_progress)
+        self.index_worker.done.connect(self._on_index_done)
+        self.index_worker.start()
+        self._resize()
+        self.update()
+
     def reindex(self):
         if self.game is not None and self.index_worker is None:
             self.game.load_meta()
@@ -165,6 +181,12 @@ class SyncWindow(QWidget):
         if self.game is not None and self.game.slug == slug:
             self.game.load_meta()
             self._start_current()
+        if isinstance(w, BenchWorker):
+            self.tray.showMessage(
+                "Walkthrough Sync",
+                f"Image model test finished — {msg}. Details: data\\benchmark.txt" if ok
+                else f"Image model test stopped: {msg}", QSystemTrayIcon.Information, 8000)
+            return
         if ok:
             self.tray.showMessage("Walkthrough Sync",
                                   f"{self.game.name if self.game else slug} is ready. "
@@ -228,9 +250,10 @@ class SyncWindow(QWidget):
                     GREY, 0.0, ACCENT, "")
         if self.index_info is not None:
             stage, frac, text = self.index_info
-            label = {"info": "Preparing", "download": "Downloading", "analyse": "Analysing",
-                     "check": "Self-check"}.get(stage, "Working")
-            return (g.name, f"{label} walkthrough", text, AMBER, frac, AMBER,
+            label = {"info": "Preparing walkthrough", "download": "Downloading walkthrough",
+                     "analyse": "Analysing walkthrough", "check": "Self-check",
+                     "bench": "Testing image models"}.get(stage, "Working")
+            return (g.name, label, text, AMBER, frac, AMBER,
                     f"{frac * 100:.0f}%")
         if not g.ready:
             st = g.meta.get("status")

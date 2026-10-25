@@ -167,10 +167,11 @@ def probe_duration(video: Path) -> float:
 
 # ---------------------------------------------------------------------- #
 def decode_and_embed(video: Path, duration: float, progress: Progress,
-                     cancel: threading.Event) -> tuple[np.ndarray, dict[int, bytes]]:
+                     cancel: threading.Event, model_key: str | None = None
+                     ) -> tuple[np.ndarray, dict[int, bytes]]:
     from PIL import Image
 
-    emb_model = E.get()
+    emb_model = E.get(model_key)
     n = int(math.ceil(duration))
     workers = max(2, min(8, (os.cpu_count() or 4) // 2))
     chunk = int(math.ceil(n / workers))
@@ -263,6 +264,9 @@ def decode_and_embed(video: Path, duration: float, progress: Progress,
 def build(game: G.Game, progress: Progress, cancel: threading.Event,
           keep_video: bool = False) -> None:
     url = game.meta["url"]
+    key = C.load().get("model") or E.DEFAULT_KEY
+    if key not in E.MODELS:
+        key = E.DEFAULT_KEY
     game.meta["status"] = "indexing"
     game.save_meta()
 
@@ -284,7 +288,7 @@ def build(game: G.Game, progress: Progress, cancel: threading.Event,
 
     def _load():
         try:
-            E.get()
+            E.get(key)
         except BaseException as e:  # noqa: BLE001
             model_err.append(e)
     loader = threading.Thread(target=_load, daemon=True)
@@ -302,11 +306,11 @@ def build(game: G.Game, progress: Progress, cancel: threading.Event,
     game.meta["duration"] = round(duration, 2)
 
     t0 = time.time()
-    emb, thumbs = decode_and_embed(video, duration, progress, cancel)
+    emb, thumbs = decode_and_embed(video, duration, progress, cancel, key)
     np.save(game.dir / "emb.npy", emb)
     np.save(game.dir / "mean.npy", emb.astype(np.float32).mean(axis=0))
     G.write_thumbs(game.dir, thumbs, int(math.ceil(duration / G.THUMB_EVERY)) + 1)
-    C.log(f"index {game.slug}: {len(emb)} frames in {time.time() - t0:.0f}s on {E.get().gpu_name}")
+    C.log(f"index {game.slug}: {len(emb)} frames in {time.time() - t0:.0f}s on {E.get(key).gpu_name}")
 
     if not keep_video:
         try:
@@ -316,7 +320,8 @@ def build(game: G.Game, progress: Progress, cancel: threading.Event,
 
     game.meta["status"] = "ready"
     game.meta["indexed"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-    game.meta["model"] = f"{E.MODEL}/{E.PRETRAINED}"
+    game.meta["model_key"] = key
+    game.meta["model"] = E.MODELS[key]["label"]
     game.save_meta()
 
     progress("check", 0.0, "Self-check…")
@@ -362,7 +367,7 @@ def replay(game: G.Game, segments: int = 4, minutes: float = 15, seed: int = 7,
     if thumbs is None:
         return "no thumbnails"
     dur = game.duration
-    model = E.get()
+    model = E.get(game.meta.get("model_key") or E.DEFAULT_KEY)
     rng = random.Random(seed)
     seg_len = minutes * 60
     lines, errs_all, within_all = [], [], []

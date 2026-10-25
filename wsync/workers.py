@@ -144,9 +144,10 @@ class LiveWorker(QThread):
                     last_t = None
                     self._emit("user_paused")
                     continue
-                if not E.loaded():
+                key = self.game.meta.get("model_key") or E.DEFAULT_KEY
+                if not E.loaded(key):
                     self._emit("loading")
-                    E.get()
+                    E.get(key)
                     last_t = None
                     continue
 
@@ -184,7 +185,7 @@ class LiveWorker(QThread):
                     continue
 
                 dark = float(small.mean()) < DARK_LEVEL
-                q_raw = None if dark else E.get().embed(frame)[0]
+                q_raw = None if dark else E.get(key).embed(frame)[0]
                 # Paused (a menu, the map, a pause screen): time spent here isn't
                 # progress, so the tracker doesn't move forward.
                 paused = self.pause.update(q_raw)
@@ -212,6 +213,29 @@ class LiveWorker(QThread):
                 grabber.close()
             if self.rec is not None:
                 self.rec.flush()
+
+
+class BenchWorker(QThread):
+    """Runs a pending image-model benchmark (see benchmark.py)."""
+    progress = Signal(str, float, str)
+    done = Signal(str, bool, str)
+
+    def __init__(self, slug: str):
+        super().__init__()
+        self.slug = slug
+        self.cancel = threading.Event()
+
+    def run(self):
+        from . import benchmark
+        try:
+            msg = benchmark.run(lambda s, f, t: self.progress.emit(s, f, t), self.cancel)
+            C.log(f"benchmark finished: {msg}")
+            self.done.emit(self.slug, True, msg)
+        except indexer.Cancelled:
+            self.done.emit(self.slug, False, "Cancelled")
+        except Exception as e:
+            C.log("benchmark failed:\n" + traceback.format_exc())
+            self.done.emit(self.slug, False, str(e)[:300])
 
 
 class IndexWorker(QThread):
