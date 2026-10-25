@@ -309,26 +309,28 @@ class SyncWindow(QWidget):
         f.setBold(True)
         return f
 
-    def _minimal_text(self) -> tuple[str, QColor]:
-        """'12.34%' and its colour: white while tracking, dimmed while waiting
-        or paused, amber while analysing, red when something's wrong."""
+    def _minimal_text(self) -> tuple[str, QColor, QColor]:
+        """'12.34%', its colour, and the status dot's colour — the same dot as
+        on the full card: green confident, amber unsure / analysing, grey
+        waiting for the game or paused, red when something's wrong."""
         g = self.game
+        _, _, _, dot, frac, _, _ = self._lines()
         if g is None:
-            return "–", MUTED
+            return "–", MUTED, dot
         if self.index_info is not None:
-            return f"{self.index_info[1] * 100:.0f}%", AMBER
+            return f"{self.index_info[1] * 100:.0f}%", AMBER, dot
         if not g.ready:
-            return "!", RED
-        frac = self._lines()[4]
-        st = self.live.get("status", "")
-        col = RED if st == "error" else TEXT if st in ("tracking", "updated") else MUTED
-        return f"{frac * 100:.2f}%", col
+            return "!", RED, dot
+        return f"{frac * 100:.2f}%", TEXT, dot
+
+    def _minimal_dot(self, fm: QFontMetrics) -> int:
+        return max(7, round(fm.height() * 0.38))
 
     def _resize(self):
         if self._minimal():
             fm = QFontMetrics(self._minimal_font())
             # sized for the widest value so the pill doesn't twitch as it counts
-            w = fm.horizontalAdvance("100.00%") + 2 * 9
+            w = 9 + self._minimal_dot(fm) + 7 + fm.horizontalAdvance("100.00%") + 9
             h = fm.height() + 2 * 4
             if self.size().width() != w or self.size().height() != h:
                 self.setFixedSize(w, h)
@@ -362,10 +364,17 @@ class SyncWindow(QWidget):
 
         if self._minimal():
             self._thumb_rect = QRect()
-            text, col = self._minimal_text()
-            p.setFont(self._minimal_font())
+            text, col, dcol = self._minimal_text()
+            f = self._minimal_font()
+            fm = QFontMetrics(f)
+            d = self._minimal_dot(fm)
+            p.setPen(Qt.NoPen)
+            p.setBrush(dcol)
+            p.drawEllipse(QRectF(9, (self.height() - d) / 2, d, d))
+            p.setFont(f)
             p.setPen(col)
-            p.drawText(self.rect(), Qt.AlignCenter, text)
+            p.drawText(QRect(9 + d + 7, 0, self.width() - (9 + d + 7) - 9, self.height()),
+                       Qt.AlignRight | Qt.AlignVCenter, text)
             p.end()
             return
 
@@ -533,7 +542,7 @@ class SyncWindow(QWidget):
         g = self.game
         if g is None:
             return ""
-        parts = [g.meta.get("title", g.name)]
+        parts = [g.meta.get("title", g.name), self._lines()[2]]
         if self.live.get("position") is not None:
             parts.append(f"Best guess {C.fmt_time(self.live['position'])} "
                          f"(±{self.live.get('spread', 0):.0f}s), "

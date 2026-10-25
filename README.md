@@ -14,7 +14,7 @@ believable pace and waits for the next landmark.
 <p align="center">
   <img src="docs/card.png" width="363" alt="The widget: a progress ring at 29%, the game name, 2:18:54 / 7:53:40 and a green 'Tracking · confident' status">
   &nbsp;&nbsp;
-  <img src="docs/minimal.png" width="108" alt="Minimal mode: just 29.32%">
+  <img src="docs/minimal.png" width="122" alt="Minimal mode: a green status dot and 29.32%">
   <br><sub>The card, and <i>Minimal (percentage only)</i> from the right-click menu</sub>
 </p>
 
@@ -52,8 +52,9 @@ Run **`install_startup.bat`** if you want it to start with Windows.
 * **Donut** — percentage through the walkthrough. Then your position, and a status dot:
   green *confident*, amber *fairly sure / searching*, grey *waiting / paused*.
 * **Minimal (percentage only)** (right-click): shrinks the widget to a small
-  pill showing just *12.34%* — white while tracking, dimmed while waiting or
-  paused, amber while a walkthrough is being analysed. Hover for details.
+  pill showing just *12.34%* and the status dot (green confident, amber unsure
+  or analysing, grey waiting for the game or paused, red on errors). Hover for
+  details.
 * **Progress text** (right-click): the line under the name shows your position
   (*2:15:34 / 7:53:40*), the walkthrough time remaining (*5:38:06 left*), or no
   time; tick *Percentage* to add *29.3%*. With both off the line disappears.
